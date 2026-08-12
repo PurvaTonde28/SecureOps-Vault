@@ -13,6 +13,7 @@ from app.rerank import rerank
 from app.generation import generate_answer
 from app.cost_tracking import log_usage, check_budget_status
 from app.models import LoginRequest, LoginResponse, QueryRequest, QueryResponse
+from app.guardrails import detect_prompt_injection, redact_pii
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,6 +58,13 @@ def query(payload: QueryRequest, token: str = Depends(get_current_user_token)):
     it doesn't need to.
     """
     identity = get_user_identity(token)
+    injection_check = detect_prompt_injection(payload.query)
+    if injection_check["flagged"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Your query was rejected by security filtering. Please rephrase your question.",
+        )
+
     user_client = get_user_scoped_client(token)
 
     candidates = hybrid_search(user_client, payload.query, match_count=20)
@@ -65,13 +73,17 @@ def query(payload: QueryRequest, token: str = Depends(get_current_user_token)):
     if not top_chunks:
         # RLS may have filtered EVERYTHING out for this user — that's not an
         # error, it's a correct outcome we should report honestly.
+        redaction = redact_pii(result.answer)
+        safe_answer = redaction["redacted_text"]
+
         return QueryResponse(
-            answer="No accessible documents matched your query.",
-            cited_chunk_ids=[],
-            sufficient_context=False,
-            cost_usd=0.0,
-            budget_status="ok",
+            answer=safe_answer,   # <- changed from result.answer
+            cited_chunk_ids=result.cited_chunk_ids,
+            sufficient_context=result.sufficient_context,
+            cost_usd=cost,
+            budget_status=budget["status"],
         )
+
 
     result = generate_answer(payload.query, top_chunks)
 
