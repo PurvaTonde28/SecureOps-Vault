@@ -1,7 +1,6 @@
 import os
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi import Depends
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
@@ -43,3 +42,21 @@ def get_user_identity(access_token: str) -> dict:
         raise HTTPException(status_code=403, detail="User has no tenant/role assigned")
 
     return {"user_id": user.id, "tenant_id": tenant_id, "role": role}
+
+
+def require_role(allowed_roles: list[str]):
+    """
+    A dependency FACTORY — not a dependency itself. Calling require_role(["admin"])
+    returns a function FastAPI can use as a dependency. This lets us reuse the same
+    role-check logic for different endpoints with different allowed roles, without
+    copy-pasting the check each time.
+    """
+    def dependency(token: str = Depends(get_current_user_token)) -> dict:
+        identity = get_user_identity(token)
+        if identity["role"] not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"This action requires one of these roles: {', '.join(allowed_roles)}",
+            )
+        return identity
+    return dependency

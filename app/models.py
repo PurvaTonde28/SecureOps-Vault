@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-
+from typing import Literal
 
 class GeneratedAnswer(BaseModel):
     """
@@ -59,3 +59,22 @@ class QueryResponse(BaseModel):
     sufficient_context: bool
     cost_usd: float
     budget_status: str
+
+class CreateUserRequest(BaseModel):
+    email: str
+    password: str
+    role: Literal["employee", "manager", "admin"]
+
+class CreateUserResponse(BaseModel):
+    user_id: str
+    email: str
+    tenant_id: str
+    role: str
+
+class IngestDocumentRequest(BaseModel):
+    content: str
+    required_role: Literal["employee", "manager", "admin"] = "employee"
+
+class IngestDocumentResponse(BaseModel):
+    chunks_created: int
+    tenant_id: str

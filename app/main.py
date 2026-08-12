@@ -6,13 +6,15 @@ import logging
 from fastapi import FastAPI, Depends, HTTPException
 from supabase import create_client
 
-from app.auth import get_current_user_token, get_user_identity
-from app.database import get_user_scoped_client
+from app.auth import get_current_user_token, get_user_identity, require_role
+from app.ingestion import ingest_document
+from app.database import get_user_scoped_client, get_service_client
 from app.retrieval import hybrid_search
 from app.rerank import rerank
 from app.generation import generate_answer
 from app.cost_tracking import log_usage, check_budget_status
 from app.models import LoginRequest, LoginResponse, QueryRequest, QueryResponse
+from app.models import CreateUserRequest, CreateUserResponse, IngestDocumentRequest, IngestDocumentResponse
 from app.guardrails import detect_prompt_injection, redact_pii
 
 logging.basicConfig(level=logging.INFO)
@@ -103,6 +105,47 @@ def query(payload: QueryRequest, token: str = Depends(get_current_user_token)):
         cost_usd=cost,
         budget_status=budget["status"],
     )
+
+
+@app.post("/admin/users", response_model=CreateUserResponse)
+def create_user(payload: CreateUserRequest, identity: dict = Depends(require_role(["admin"]))):
+    """
+    Only an admin can call this — enforced by require_role above, before this
+    function body even runs. The new user is always created in the CALLING
+    admin's own tenant (identity["tenant_id"]), never a tenant from the request.
+    """
+    client = get_service_client()  # admin.create_user requires service_role — same as Phase 2's seed script
+    try:
+        result = client.auth.admin.create_user({
+            "email": payload.email,
+            "password": payload.password,
+            "email_confirm": True,
+            "app_metadata": {"tenant_id": identity["tenant_id"], "role": payload.role},
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not create user: {e}")
+
+    return CreateUserResponse(
+        user_id=result.user.id,
+        email=payload.email,
+        tenant_id=identity["tenant_id"],
+        role=payload.role,
+    )
+
+
+@app.post("/admin/documents", response_model=IngestDocumentResponse)
+def create_document(payload: IngestDocumentRequest, identity: dict = Depends(require_role(["admin", "manager"]))):
+    """
+    Admins AND managers can add documents (a reasonable real-world call — content
+    ownership is often broader than user-management rights). Reuses ingest_document()
+    from Phase 3 completely unchanged — chunking, embedding, saving all just work.
+    """
+    chunks_created = ingest_document(
+        tenant_id=identity["tenant_id"],
+        content=payload.content,
+        required_role=payload.required_role,
+    )
+    return IngestDocumentResponse(chunks_created=chunks_created, tenant_id=identity["tenant_id"])
 
 
 @app.get("/health")
