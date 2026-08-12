@@ -70,41 +70,96 @@ else:
             logout()
             st.rerun()
 
-    st.subheader("Ask a question")
-    query_text = st.text_input("Query", placeholder="Ask a question about your organization's documents")
+    can_manage_users = st.session_state.role == "admin"
+    can_manage_docs = st.session_state.role in ("admin", "manager")
 
-    if st.button("Search") and query_text:
-        with st.spinner("Retrieving, reranking, and generating..."):
-            try:
-                response = requests.post(
-                    f"{API_BASE_URL}/query",
-                    json={"query": query_text},
-                    headers={"Authorization": f"Bearer {st.session_state.access_token}"},
-                )
-            except requests.exceptions.ConnectionError:
-                st.error("Can't reach the backend.")
-                response = None
+    if can_manage_users or can_manage_docs:
+        tab_query, tab_admin = st.tabs(["Ask a question", "Admin"])
+    else:
+        tab_query = st.container()
+        tab_admin = None
 
-        if response is not None:
-            if response.status_code == 400:
-                st.error(response.json().get("detail", "Request rejected."))
-            elif response.status_code != 200:
-                st.error(f"Error: {response.status_code}")
-            else:
-                data = response.json()
+    # ---------- QUERY TAB ----------
+    with tab_query:
+        query_text = st.text_input("Query", placeholder="Ask a question about your organization's documents")
 
-                st.markdown("### Answer")
-                st.write(data["answer"])
+        if st.button("Search") and query_text:
+            with st.spinner("Retrieving, reranking, and generating..."):
+                try:
+                    response = requests.post(
+                        f"{API_BASE_URL}/query",
+                        json={"query": query_text},
+                        headers={"Authorization": f"Bearer {st.session_state.access_token}"},
+                    )
+                except requests.exceptions.ConnectionError:
+                    st.error("Can't reach the backend.")
+                    response = None
 
-                if not data["sufficient_context"]:
-                    st.info("The system did not have sufficient accessible context to fully answer this.")
+            if response is not None:
+                if response.status_code == 400:
+                    st.error(response.json().get("detail", "Request rejected."))
+                elif response.status_code != 200:
+                    st.error(f"Error: {response.status_code}")
+                else:
+                    data = response.json()
 
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Cited sources", len(data["cited_chunk_ids"]))
-                col2.metric("Cost", f"${data['cost_usd']:.6f}")
-                col3.metric("Budget status", data["budget_status"])
+                    st.markdown("### Answer")
+                    st.write(data["answer"])
 
-                if data["cited_chunk_ids"]:
-                    with st.expander("Citation details (chunk IDs)"):
-                        for chunk_id in data["cited_chunk_ids"]:
-                            st.code(chunk_id)
+                    if not data["sufficient_context"]:
+                        st.info("The system did not have sufficient accessible context to fully answer this.")
+
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Cited sources", len(data["cited_chunk_ids"]))
+                    col2.metric("Cost", f"${data['cost_usd']:.6f}")
+                    col3.metric("Budget status", data["budget_status"])
+
+                    if data["cited_chunk_ids"]:
+                        with st.expander("Citation details (chunk IDs)"):
+                            for chunk_id in data["cited_chunk_ids"]:
+                                st.code(chunk_id)
+
+    # ---------- ADMIN TAB ----------
+    if tab_admin is not None:
+        with tab_admin:
+            auth_headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
+
+            if can_manage_users:
+                st.markdown("### Add a user to your organization")
+                with st.form("create_user_form"):
+                    new_email = st.text_input("New user's email")
+                    new_password = st.text_input("Temporary password", type="password")
+                    new_role = st.selectbox("Role", ["employee", "manager", "admin"])
+                    create_user_submitted = st.form_submit_button("Create user")
+
+                if create_user_submitted:
+                    resp = requests.post(
+                        f"{API_BASE_URL}/admin/users",
+                        json={"email": new_email, "password": new_password, "role": new_role},
+                        headers=auth_headers,
+                    )
+                    if resp.status_code == 200:
+                        st.success(f"Created {new_email} as {new_role}.")
+                    else:
+                        st.error(resp.json().get("detail", "Failed to create user."))
+
+                st.divider()
+
+            if can_manage_docs:
+                st.markdown("### Add a document")
+                with st.form("add_document_form"):
+                    new_content = st.text_area("Document content", height=150)
+                    doc_role = st.selectbox("Minimum clearance to view this document", ["employee", "manager", "admin"])
+                    add_doc_submitted = st.form_submit_button("Ingest document")
+
+                if add_doc_submitted:
+                    resp = requests.post(
+                        f"{API_BASE_URL}/admin/documents",
+                        json={"content": new_content, "required_role": doc_role},
+                        headers=auth_headers,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        st.success(f"Ingested {data['chunks_created']} chunk(s).")
+                    else:
+                        st.error(resp.json().get("detail", "Failed to ingest document."))
