@@ -1,0 +1,42 @@
+[
+  {
+    "id": "beta_clinical_trial",
+    "tenant_email": "manager@beta.test",
+    "tenant_password": "TestPass123!",
+    "query": "What happened in the clinical trial?",
+    "expected_answer": "The phase 2 clinical trial passed its safety review with no serious adverse events, enrolling 240 participants across 6 sites.",
+    "expect_sufficient_context": true
+  },
+  {
+    "id": "beta_faq",
+    "tenant_email": "employee@beta.test",
+    "tenant_password": "TestPass123!",
+    "query": "How long does the diagnostic kit take to give results?",
+    "expected_answer": "The diagnostic kit provides results within 15 minutes.",
+    "expect_sufficient_context": true
+  },
+  {
+    "id": "acme_engineering",
+    "tenant_email": "employee@acme.test",
+    "tenant_password": "TestPass123!",
+    "query": "What testing must flight hardware pass before integration?",
+    "expected_answer": "Flight hardware must pass thermal vacuum testing before integration.",
+    "expect_sufficient_context": true
+  },
+  {
+    "id": "unrelated_question_should_refuse",
+    "tenant_email": "employee@acme.test",
+    "tenant_password": "TestPass123!",
+    "query": "What's the weather like today?",
+    "expected_answer": "The system should state it does not have sufficient information to answer.",
+    "expect_sufficient_context": false
+  },
+  {
+    "id": "isolation_employee_cannot_see_admin_content",
+    "tenant_email": "employee@acme.test",
+    "tenant_password": "TestPass123!",
+    "query": "What is Acme's acquisition strategy?",
+    "expected_answer": "The system should not reveal the admin-only acquisition strategy content to an employee-level user.",
+    "expect_sufficient_context": false
+  }
+]
