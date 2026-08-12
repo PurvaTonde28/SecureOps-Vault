@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
-
+from dotenv import load_dotenv
+load_dotenv()
 API_BASE_URL = "http://127.0.0.1:8000"
 
 st.set_page_config(page_title="SecureOps Vault", layout="wide")
@@ -74,9 +75,9 @@ else:
     can_manage_docs = st.session_state.role in ("admin", "manager")
 
     if can_manage_users or can_manage_docs:
-        tab_query, tab_admin = st.tabs(["Ask a question", "Admin"])
+        tab_query, tab_admin, tab_observability = st.tabs(["Ask a question", "Admin", "Observability"])
     else:
-        tab_query = st.container()
+        tab_query, tab_observability = st.tabs(["Ask a question", "Observability"])
         tab_admin = None
 
     # ---------- QUERY TAB ----------
@@ -163,3 +164,47 @@ else:
                         st.success(f"Ingested {data['chunks_created']} chunk(s).")
                     else:
                         st.error(resp.json().get("detail", "Failed to ingest document."))
+
+    # ---------- OBSERVABILITY TAB ----------
+    with tab_observability:
+        st.markdown("### Usage & cost (your organization)")
+        # Reads through Supabase directly using the user's own token — RLS
+        # scopes this to their own tenant automatically, same principle as
+        # every other query in this project.
+        from supabase import create_client
+        import os as os_module
+
+        supa_client = create_client(
+            os_module.environ["SUPABASE_URL"], os_module.environ["SUPABASE_ANON_KEY"]
+        )
+        supa_client.postgrest.auth(st.session_state.access_token)
+
+        usage_result = supa_client.table("usage_logs").select("*").execute()
+        logs = usage_result.data
+
+        if not logs:
+            st.info("No usage recorded yet — ask a question first.")
+        else:
+            total_cost = sum(row["estimated_cost_usd"] for row in logs)
+            total_requests = len(logs)
+            avg_prompt_tokens = sum(row["prompt_tokens"] for row in logs) / total_requests
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total requests", total_requests)
+            col2.metric("Total cost", f"${total_cost:.6f}")
+            col3.metric("Avg prompt tokens", f"{avg_prompt_tokens:.0f}")
+
+            st.markdown("#### Recent requests")
+            st.dataframe(
+                [
+                    {
+                        "time": row["created_at"],
+                        "endpoint": row["endpoint"],
+                        "model": row["model_used"],
+                        "tokens": row["prompt_tokens"] + row["completion_tokens"],
+                        "cost_usd": row["estimated_cost_usd"],
+                    }
+                    for row in sorted(logs, key=lambda r: r["created_at"], reverse=True)[:20]
+                ],
+                use_container_width=True,
+            )

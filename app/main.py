@@ -1,10 +1,12 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
+import os, time
 import logging
 from fastapi import FastAPI, Depends, HTTPException
 from supabase import create_client
+
+import json as json_module
 
 from app.auth import get_current_user_token, get_user_identity, require_role
 from app.ingestion import ingest_document
@@ -17,10 +19,42 @@ from app.models import LoginRequest, LoginResponse, QueryRequest, QueryResponse
 from app.models import CreateUserRequest, CreateUserResponse, IngestDocumentRequest, IngestDocumentResponse
 from app.guardrails import detect_prompt_injection, redact_pii
 
-logging.basicConfig(level=logging.INFO)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",  # structured JSON lines don't need Python's default prefix clutter
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler(),  # still prints to terminal too, for live dev visibility
+    ],
+)
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SecureOps Vault")
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    """
+    Runs around EVERY request. Logs one structured JSON line per request with
+    consistent fields — this is what makes it queryable later, unlike scattered
+    plain-text log lines.
+    """
+    start_time = time.time()
+    response = await call_next(request)
+    duration_ms = round((time.time() - start_time) * 1000, 2)
+
+    log_entry = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "method": request.method,
+        "path": request.url.path,
+        "status_code": response.status_code,
+        "duration_ms": duration_ms,
+    }
+    logger.info(json_module.dumps(log_entry))
+    return response
+
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
