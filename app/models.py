@@ -37,3 +37,25 @@ class GenerationResult(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     retries_used: int
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    tenant_id: str
+    role: str
+
+
+class QueryRequest(BaseModel):
+    query: str
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    cited_chunk_ids: list[str]
+    sufficient_context: bool
+    cost_usd: float
+    budget_status: str
