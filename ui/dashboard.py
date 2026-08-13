@@ -1,8 +1,17 @@
 import streamlit as st
 import requests
+import os
 from dotenv import load_dotenv
 load_dotenv()
-API_BASE_URL = "http://127.0.0.1:8000"
+
+def get_config(key: str, default: str = None) -> str:
+    # st.secrets works on Streamlit Cloud; os.environ works locally/Docker.
+    # Trying both means this file works unmodified in every environment.
+    if key in st.secrets:
+        return st.secrets[key]
+    return os.environ.get(key, default)
+
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")
 
 st.set_page_config(page_title="SecureOps Vault", layout="wide")
 

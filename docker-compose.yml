@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    # env_file loads your existing .env at container START, not build time —
+    # see Decision 3. Your real keys never get baked into the image.
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8000
+      # "backend" here is the OTHER service's name above, not a hostname you
+      # configured anywhere — Compose automatically makes services reachable
+      # by their service name on an internal network it creates for you.
+    env_file:
+      - .env
+    depends_on:
+      - backend

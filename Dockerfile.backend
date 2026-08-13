@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+# Keeps Python from buffering stdout — logs (including your JSON log lines
+# from Phase 13) show up immediately in `docker logs`, not just on exit.
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# requirements.txt copied and installed BEFORE the rest of the code — see
+# Decision 4 above. This is the single most important line-ordering choice
+# in this file.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Now copy the actual application code
+COPY app/ ./app/
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
